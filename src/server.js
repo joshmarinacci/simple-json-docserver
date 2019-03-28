@@ -56,10 +56,58 @@ function checkAdminAuth(req,res,next) {
     next()
 }
 
+function loadJSONDocument(id,username) {
+    return findDocMeta({doc:id,username:username}).then(infos=>{
+        if(infos.length < 1) throw new Error("no such document for id "+id)
+        return JSON.parse(fs.readFileSync(path.join(CONFIG.DOCS_DIR,infos[0].doc+'.json')).toString())
+    })
+}
+function saveJSONDocument(id, doc, username, query) {
+    //save the body data to a json file
+    //create a unique doc id if none is specified
+    //add metadata to database
+    return Promise.resolve(null).then(() => {
+        console.log("saving the json doc",doc)
+        console.log("using query",query)
+        console.log("with username",username)
+        if(!query.type) throw new Error("missing doc type")
+        const meta = {
+            doc:"id"+Math.floor(Math.random()*10000000),
+            timestamp: Date.now(),
+            username:username,
+            type:query.type
+        }
+        if(id) meta.doc = id
+
+        const doc_path = path.join(CONFIG.DOCS_DIR,meta.doc+'.json')
+        console.log('saving',meta,'to',doc_path)
+        fs.writeFileSync(doc_path, JSON.stringify(doc))
+        return docInsert(meta)
+    })
+}
+function findDocMeta(query,options) {
+    return new Promise((res,rej)=>{
+        DB.find(query,options,(err,docs)=>{
+            if(err) return rej(err)
+            return res(docs)
+        })
+    })
+}
+
+function docInsert(doc) {
+    return new Promise((res,rej)=>{
+        DB.insert(doc,(err,newDoc)=>{
+            if(err) return rej(err)
+            return res(newDoc)
+        })
+    })
+}
+
+
 function setupRoutes(app) {
     app.get('/info',(req,res)=>{
-        res.json({
-            authUrl:'https://www.yahoo.com/'
+        return res.json({
+            authUrl:'./auth/github/login'
         })
     })
     app.get('/auth/github/login', (req,res)=>{
@@ -67,8 +115,7 @@ function setupRoutes(app) {
         console.log("requesting github login with url", url)
         res.json({action:'open-window', url:url})
     })
-    app.get('/auth/github/callback',
-        passport.authenticate('github', {session:false}), (req,res) => {
+    app.get('/auth/github/callback', passport.authenticate('github', {session:false}), (req,res) => {
             console.log("successfully authenticated from github")
             res.send(`<html>
 <body>
@@ -100,22 +147,25 @@ function setupRoutes(app) {
         }).then(docs => res.json(docs))
     })
     app.get('/userinfo', checkAuth, (req,res) => {
-        console.log("checking username",req.username)
         if(req.username) {
             return res.json({username:req.username})
         }
         res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
     })
-
     app.get('/list/', checkAuth, (req,res)=>{
-        return new Promise((res,rej)=>{
-            DB.find({type:'*', username:req.username, $not:{archived:true}})
-                .sort({timestamp:-1})
-                .exec((err,docs)=>{
-                    if(err) return rej(err)
-                    return res(docs)
-                })
-        }).then(docs => res.json(docs))
+        findDocMeta({username:req.username})
+            .then(docs => res.json(docs))
+    })
+
+    app.get('/doc/:id',checkAuth,(req,res)=>{
+        loadJSONDocument(req.params.id, req.username)
+            .then(doc => res.json(doc))
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.post('/doc/:id', checkAuth, (req,res)=>{
+        saveJSONDocument(req.params.id,req.body,req.username,req.query)
+            .then(doc => res.json({success:true, doc:doc, message:'saved'}))
+            .catch(e => res.json({success:false, message:e.message}))
     })
 
 }
@@ -198,7 +248,7 @@ function pFind(query,options) {
         })
     })
 }
-
+/*
 function pInsert(doc) {
     return new Promise((res,rej)=>{
         DB.insert(doc,(err,newDoc)=>{
@@ -229,7 +279,8 @@ function pUpdate(query,doc) {
         })
     })
 }
-
+*/
+/*
 function findAllModules() {
     return new Promise((res,rej)=>{
         DB.find({type:'module', $not:{archived:true}})
@@ -253,17 +304,6 @@ function findModuleByIdCompact(id) {
     })
 }
 
-function getFullModuleById(id) {
-    return new Promise((res,rej)=>{
-        DB.find({_id:id})
-            .exec((err,docs)=>{
-                if(err) return rej(err)
-                const mod = docs[0]
-                mod.manifest = JSON.parse(fs.readFileSync(path.join(ANIM_DIR,mod.animpath)).toString())
-                return res(mod)
-            })
-    })
-}
 
 function pUpdateFields(query, fields) {
     return new Promise((res,rej)=>{
@@ -277,11 +317,12 @@ function pUpdateFields(query, fields) {
             })
     })
 }
-
+*/
 
 
 function setupServer() {
     //get full info of a particular module
+    /*
     app.post('/api/modules/archive/:id', checkAdminAuth, (req,res)=>{
         pUpdateFields({_id:req.params.id},{archived:true}).then((doc)=>{
             console.log("successfully archived it",doc)
@@ -304,7 +345,8 @@ function setupServer() {
                 console.log("/api/modules error",e)
                 res.json({success:false, error:e})
             })
-    )
+    )*/
+    /*
     //mark a particular item in the queue as completed
     app.post('/api/queue/complete/:id', (req,res)=>{
         console.log("trying to complete", req.params.id)
@@ -338,6 +380,8 @@ function setupServer() {
         })
     )
 
+     */
+/*
     app.post('/api/publish/', checkAuth, (req,res)=>{
         saveModule(req.body)
             .then(doc => res.json({success:true, doc:doc}))
@@ -347,55 +391,6 @@ function setupServer() {
             })
     })
 
-    /*
-    app.get('/api/github/login', (req,res)=>{
-        const url = `https://github.com/login/oauth/authorize?client_id=${SECRETS.GITHUB_CLIENT_ID}&redirect_uri=${SECRETS.GITHUB_CALLBACK_URL}`
-        console.log("requesting github login with url", url)
-        res.json({action:'open-window', url:url})
-    })
-
-    app.get('/api/github/callback',
-        passport.authenticate('github', {session:false}),
-        (req,res) => {
-            console.log("successfully authenticated from github")
-            res.send(`<html>
-<body>
-    <p>great. you are authenticated. you may close this window now.</p>
-    <script>
-        document.body.onload = function() {
-            const injectedUser = ${JSON.stringify(req.user)}
-            console.log("the user is",injectedUser)
-            const msg = {payload:injectedUser, status:'success'}
-            console.log("msg",msg)
-            console.log('location',window.opener.location,'*')
-            window.opener.postMessage(msg, '*')
-            console.log("done popsting a message")
-        }
-</script>
-</body>
-</html>`)
-        })
-        */
-
-    /*
-    app.get('/api/userinfo', (req,res) => {
-        const user = USERS[req.query.accesstoken]
-        if(user) {
-            user.admin = (ADMIN_USERS.indexOf(user.username) >= 0)
-            return res.json({success:true,user:user})
-        }
-        res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
-    })
-
-    app.post('/api/updatequeue', checkAdminAuth, (req,res) => {
-        pFind({type:'queue'})
-            .then((queues)=> {
-                const queue = queues[0]
-                queue.modules = req.body
-                pUpdate({type:'queue'},queue)
-                    .then(queue => res.json({success:true, queue:queue}))
-            })
-    })
-*/
+ */
 }
 
