@@ -169,7 +169,8 @@ function realMetaInsert(meta) {
 function setupRoutes(app) {
     app.get('/info',(req,res)=>{
         return res.json({
-            authUrl:'./auth/github/login'
+            assetUpload:true,
+            authentication:true,
         })
     })
     app.get('/auth/github/login', (req,res)=>{
