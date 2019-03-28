@@ -57,9 +57,9 @@ function checkAdminAuth(req,res,next) {
 }
 
 function loadJSONDocument(id,username) {
-    return findDocMeta({doc:id,username:username}).then(infos=>{
+    return findDocMeta({id:id,username:username}).then(infos=>{
         if(infos.length < 1) throw new Error("no such document for id "+id)
-        return JSON.parse(fs.readFileSync(path.join(CONFIG.DOCS_DIR,infos[0].doc+'.json')).toString())
+        return JSON.parse(fs.readFileSync(path.join(CONFIG.DOCS_DIR,infos[0].id+'.json')).toString())
     })
 }
 function saveJSONDocument(id, doc, username, query) {
@@ -72,18 +72,58 @@ function saveJSONDocument(id, doc, username, query) {
         console.log("with username",username)
         if(!query.type) throw new Error("missing doc type")
         const meta = {
-            doc:"id"+Math.floor(Math.random()*10000000),
+            kind:'doc',
+            id:"id"+Math.floor(Math.random()*10000000),
             timestamp: Date.now(),
             username:username,
             type:query.type,
             title:query.title,
         }
-        if(id) meta.doc = id
+        if(id) meta.id = id
 
-        const doc_path = path.join(CONFIG.DOCS_DIR,meta.doc+'.json')
+        const doc_path = path.join(CONFIG.DOCS_DIR,meta.id+'.json')
         console.log('saving',meta,'to',doc_path)
         fs.writeFileSync(doc_path, JSON.stringify(doc))
         return docInsert(meta)
+    })
+}
+
+const MIMETYPES = {
+    'png':'image/png',
+    'jpg':'image/jpeg',
+    'jpeg':'image/jpeg',
+    'm4a':'audio/aac'
+}
+function saveAsset(req) {
+    return new Promise((res,rej)=>{
+        const ext = req.params.id.substring(req.params.id.lastIndexOf('.')+1).toLowerCase()
+        console.log("got request to upload an asset with id",req.params.id, 'extension',ext)
+        const mimetype = MIMETYPES[ext]
+        console.log("mimetype",mimetype)
+        if(!mimetype) throw new Error(`unknown mimetype for extension ${ext}`)
+        const id = "asset"+Math.floor(Math.random()*10000000)
+        const fpath = path.join(CONFIG.ASSETS_DIR,id+'.'+ext)
+        console.log("writing to disk as",fpath)
+        const file = fs.createWriteStream(fpath,{encoding:'binary'})
+        //stream it directly to disk
+        req.on('data',(chunk) => file.write(chunk))
+        req.on('end', () => {
+            file.end()
+            const meta = {
+                kind:'asset',
+                id:id,
+                timestamp: Date.now(),
+                username:req.username,
+                mimeType:mimetype,
+                extension:ext,
+            }
+            console.log("done uploading. meta is",meta)
+            docInsert(meta).then(()=>{
+                console.log("done inserting")
+                res(meta)
+            })
+        })
+
     })
 }
 function findDocMeta(query,options) {
@@ -94,17 +134,16 @@ function findDocMeta(query,options) {
         })
     })
 }
-
 function docUpdate(meta) {
     return new Promise((res,rej)=>{
-        DB.update({doc:meta.doc, username:meta.username},meta,{returnUpdatedDocs:true},(err,num,newDoc)=>{
+        DB.update({id:meta.id, username:meta.username},meta,{returnUpdatedDocs:true},(err,num,newDoc)=>{
             if(err) return rej(err)
             return res(newDoc)
         })
     })
 }
 function docInsert(meta) {
-    return findDocMeta({doc:meta.doc,username:meta.username})
+    return findDocMeta({id:meta.id,username:meta.username})
         .then((found)=>{
             if(found.length > 0) {
                 console.log("this doc already exists. need to overwrite it instead")
@@ -186,6 +225,22 @@ function setupRoutes(app) {
     app.post('/doc/:id', checkAuth, (req,res)=>{
         saveJSONDocument(req.params.id,req.body,req.username,req.query)
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.get('/asset/:id',checkAuth, (req,res) => {
+        console.log("searching for",req.params.id)
+        findDocMeta({kind:'asset',id:req.params.id}).then((assets)=>{
+            if(assets.length < 1) throw new Error(`could not find asset with id ${req.params.id}`)
+            const asset = assets[0]
+            const filePath = path.join(process.cwd(),CONFIG.ASSETS_DIR,`${asset.id}.${asset.extension}`)
+            console.log("uploading the file",filePath)
+            res.sendFile(filePath)
+        })
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.post('/asset/:id',checkAuth, (req,res) => {
+        saveAsset(req)
+            .then(asset => res.json({success:true, asset:asset, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
 
