@@ -92,7 +92,8 @@ const MIMETYPES = {
     'png':'image/png',
     'jpg':'image/jpeg',
     'jpeg':'image/jpeg',
-    'm4a':'audio/aac'
+    'm4a':'audio/aac',
+    'mp3':'audio/mpeg',
 }
 function saveAsset(req) {
     return new Promise((res,rej)=>{
@@ -116,6 +117,7 @@ function saveAsset(req) {
                 username:req.username,
                 mimeType:mimetype,
                 extension:ext,
+                title:req.params.id,
             }
             console.log("done uploading. meta is",meta)
             docInsert(meta).then(()=>{
@@ -212,8 +214,8 @@ function setupRoutes(app) {
         }
         res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
     })
-    app.get('/list/', checkAuth, (req,res)=>{
-        findDocMeta({username:req.username})
+    app.get('/doc/list', checkAuth, (req,res)=>{
+        findDocMeta({username:req.username, kind:'doc'})
             .then(docs => res.json(docs))
     })
 
@@ -226,6 +228,10 @@ function setupRoutes(app) {
         saveJSONDocument(req.params.id,req.body,req.username,req.query)
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.get('/asset/list', checkAuth, (req,res)=>{
+        findDocMeta({username:req.username, kind:'asset'})
+            .then(docs => res.json(docs))
     })
     app.get('/asset/:id',checkAuth, (req,res) => {
         console.log("searching for",req.params.id)
