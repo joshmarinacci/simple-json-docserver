@@ -75,7 +75,8 @@ function saveJSONDocument(id, doc, username, query) {
             doc:"id"+Math.floor(Math.random()*10000000),
             timestamp: Date.now(),
             username:username,
-            type:query.type
+            type:query.type,
+            title:query.title,
         }
         if(id) meta.doc = id
 
@@ -94,9 +95,29 @@ function findDocMeta(query,options) {
     })
 }
 
-function docInsert(doc) {
+function docUpdate(meta) {
     return new Promise((res,rej)=>{
-        DB.insert(doc,(err,newDoc)=>{
+        DB.update({doc:meta.doc, username:meta.username},meta,{returnUpdatedDocs:true},(err,num,newDoc)=>{
+            if(err) return rej(err)
+            return res(newDoc)
+        })
+    })
+}
+function docInsert(meta) {
+    return findDocMeta({doc:meta.doc,username:meta.username})
+        .then((found)=>{
+            if(found.length > 0) {
+                console.log("this doc already exists. need to overwrite it instead")
+                return docUpdate(meta)
+            } else {
+                console.log("doing a real doc insert")
+                return realMetaInsert(meta)
+            }
+        })
+}
+function realMetaInsert(meta) {
+    return new Promise((res,rej)=>{
+        DB.insert(meta,(err,newDoc)=>{
             if(err) return rej(err)
             return res(newDoc)
         })
