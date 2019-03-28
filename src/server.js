@@ -9,18 +9,52 @@ const NEDB = require('nedb')
 const passport = require('passport')
 const GithubStrategy = require('passport-github')
 
-const SECRETS = {
-    GITHUB_CLIENT_ID:process.env.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET:process.env.GITHUB_CLIENT_SECRET,
-    GITHUB_CALLBACK_URL:process.env.GITHUB_CALLBACK_URL
-}
 const USERS = {}
 const CONFIG = {
+    GITHUB_CLIENT_ID:process.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET:process.env.GITHUB_CLIENT_SECRET,
+    GITHUB_CALLBACK_URL:process.env.GITHUB_CALLBACK_URL,
+    DIR:process.env.DIR,
+    PORT:-1,
     ADMIN_USERS:['joshmarinacci'],
-    SKIP_AUTH:false,
+    SKIP_AUTH:true,
+    INSECURE_AUTH:true,
 }
 
 let DB = null
+
+function checkAuth(req,res,next) {
+    if(CONFIG.SKIP_AUTH) {
+        req.username = 'joshmarinacci'
+        return next()
+    }
+    if(CONFIG.INSECURE_AUTH===true) {
+        console.log("params",req.params, req.query)
+        const token=req.query.accesstoken
+        req.username = user.username
+        if(req.user) return next()
+    }
+    if(!req.headers['access-key']) return res.json({success:false,message:'missing access token'})
+    const token = req.headers['access-key']
+    const user = USERS[token]
+    if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
+    next()
+}
+
+function checkAdminAuth(req,res,next) {
+    if(CONFIG.SKIP_AUTH) {
+        req.username = 'joshmarinacci'
+        return next()
+    }
+    if(!req.headers['access-key']) return res.json({success:false,message:'missing access token'})
+    const token = req.headers['access-key']
+    const user = USERS[token]
+    if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
+    if(CONFIG.ADMIN_USERS.indexOf(user.username) < 0) {
+        return res.json({success:false,message:'this user is not allowed to update the queue'})
+    }
+    next()
+}
 
 function setupRoutes(app) {
     app.get('/info',(req,res)=>{
@@ -28,10 +62,65 @@ function setupRoutes(app) {
             authUrl:'https://www.yahoo.com/'
         })
     })
+    app.get('/auth/github/login', (req,res)=>{
+        const url = `https://github.com/login/oauth/authorize?client_id=${CONFIG.GITHUB_CLIENT_ID}&redirect_uri=${CONFIG.GITHUB_CALLBACK_URL}`
+        console.log("requesting github login with url", url)
+        res.json({action:'open-window', url:url})
+    })
+    app.get('/auth/github/callback',
+        passport.authenticate('github', {session:false}), (req,res) => {
+            console.log("successfully authenticated from github")
+            res.send(`<html>
+<body>
+    <p>great. you are authenticated. you may close this window now.</p>
+    <script>
+        document.body.onload = function() {
+            const injectedUser = ${JSON.stringify(req.user)}
+            console.log("the user is",injectedUser)
+            const msg = {payload:injectedUser, status:'success'}
+            console.log("msg",msg)
+            console.log('location',window.opener.location,'*')
+            window.opener.postMessage(msg, '*')
+            console.log("done posting a message")
+        }
+</script>
+</body>
+</html>`)
+        })
+
+    app.get('/admin/list', checkAdminAuth, (req,res)=>{
+        console.log("listing all the files")
+        return new Promise((res,rej)=>{
+            DB.find({type:'*', user:'*', $not:{archived:true}})
+                .sort({timestamp:-1})
+                .exec((err,docs)=>{
+                    if(err) return rej(err)
+                    return res(docs)
+                })
+        }).then(docs => res.json(docs))
+    })
+    app.get('/userinfo', checkAuth, (req,res) => {
+        console.log("checking username",req.username)
+        if(req.username) {
+            return res.json({username:req.username})
+        }
+        res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
+    })
+
+    app.get('/list/', checkAuth, (req,res)=>{
+        return new Promise((res,rej)=>{
+            DB.find({type:'*', username:req.username, $not:{archived:true}})
+                .sort({timestamp:-1})
+                .exec((err,docs)=>{
+                    if(err) return rej(err)
+                    return res(docs)
+                })
+        }).then(docs => res.json(docs))
+    })
+
 }
 
 function startServer() {
-    console.log("using the secrets",SECRETS)
     DB = new NEDB({filename: CONFIG.DB_FILE, autoload:true})
     //create the server
     const app = express()
@@ -42,28 +131,31 @@ function startServer() {
     //assume all bodies will be JSON and parse them automatically
     app.use(bodyParser.json({limit:'20MB'}))
 
-    /*
+    //setup passport for github auth
     passport.use(new GithubStrategy({
-        clientID: SECRETS.GITHUB_CLIENT_ID,
-        clientSecret: SECRETS.GITHUB_CLIENT_SECRET,
-        callbackURL: SECRETS.GITHUB_CALLBACK_URL
+        clientID: CONFIG.GITHUB_CLIENT_ID,
+        clientSecret: CONFIG.GITHUB_CLIENT_SECRET,
+        callbackURL: CONFIG.GITHUB_CALLBACK_URL
     },function(accessToken, refreshToken, profile, done) {
+        console.log("passport callback")
         //store the user profile in memory by access token
         USERS[accessToken] = profile
+        console.log("the user is", USERS[accessToken])
+        console.log('access token is', accessToken)
         done(null, {id:profile.id, accessToken: accessToken})
     }))
 
     app.use(passport.initialize())
-     */
+
 
     setupRoutes(app)
 
 
     app.listen(CONFIG.PORT, () => console.log(`
-        doc server http://localhost:${CONFIG.PORT}/ 
-        database  ${CONFIG.DB_FILE}
-        docs dir ${CONFIG.DOCS_DIR}
-        assets dir ${CONFIG.ASSETS_DIR}
+doc server http://localhost:${CONFIG.PORT}/ 
+database  ${CONFIG.DB_FILE}
+docs dir ${CONFIG.DOCS_DIR}
+assets dir ${CONFIG.ASSETS_DIR}
         `))
 }
 
@@ -71,19 +163,20 @@ startup();
 
 function startup() {
     //handle env vars first
-    if(process.env.DIR) CONFIG.DIR = process.env.DIR
-    if(process.env.PORT) CONFIG.PORT = parseInt(process.env.PORT)
-    if(CONFIG.DIR && CONFIG.PORT) {
-        // startPubNub();
-        startServer();
-        return
-    }
-
-
-    //handle args next
     const args = process.argv.slice(2)
     if (args.length < 2) throw new Error("missing docs dir and port");
-    CONFIG.DIR = args[0];
+    if(process.env.PORT) CONFIG.PORT = parseInt(process.env.PORT)
+
+    args.filter(arg => arg.startsWith('--'))
+        .forEach(param => {
+            const parts = param.substring(2).split('=')
+            CONFIG[parts[0]] = parts[1]
+        })
+    if(CONFIG.PORT !== -1) CONFIG.PORT = parseInt(CONFIG.PORT)
+    console.log('using the config')
+    console.log(CONFIG)
+
+    //handle args next
     if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
     CONFIG.DOCS_DIR = path.join(CONFIG.DIR,'docs')
     CONFIG.ASSETS_DIR = path.join(CONFIG.DIR,'assets')
@@ -91,10 +184,7 @@ function startup() {
     if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
     if(!fs.existsSync(CONFIG.DOCS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.DOCS_DIR}"`)
     if(!fs.existsSync(CONFIG.ASSETS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.ASSETS_DIR}"`)
-
-    const portS = args[1]
-    if(!parseInt(portS)) throw new Error(`invalid port number "${portS}"`)
-    CONFIG.PORT = parseInt(portS)
+    if(CONFIG.PORT === -1) throw new Error(`missing port number`)
 
     startServer();
 }
@@ -188,26 +278,7 @@ function pUpdateFields(query, fields) {
     })
 }
 
-function checkAuth(req,res,next) {
-    if(SETTINGS.SKIP_AUTH) return next()
-    if(!req.headers['access-key']) return res.json({success:false,message:'missing access token'})
-    const token = req.headers['access-key']
-    const user = USERS[token]
-    if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
-    next()
-}
 
-function checkAdminAuth(req,res,next) {
-    if(SETTINGS.SKIP_AUTH) return next()
-    if(!req.headers['access-key']) return res.json({success:false,message:'missing access token'})
-    const token = req.headers['access-key']
-    const user = USERS[token]
-    if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
-    if(ADMIN_USERS.indexOf(user.username) < 0) {
-        return res.json({success:false,message:'this user is not allowed to update the queue'})
-    }
-    next()
-}
 
 function setupServer() {
     //get full info of a particular module
@@ -276,6 +347,7 @@ function setupServer() {
             })
     })
 
+    /*
     app.get('/api/github/login', (req,res)=>{
         const url = `https://github.com/login/oauth/authorize?client_id=${SECRETS.GITHUB_CLIENT_ID}&redirect_uri=${SECRETS.GITHUB_CALLBACK_URL}`
         console.log("requesting github login with url", url)
@@ -303,7 +375,7 @@ function setupServer() {
 </body>
 </html>`)
         })
-
+        */
 
     /*
     app.get('/api/userinfo', (req,res) => {
