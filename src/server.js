@@ -297,7 +297,7 @@ startup();
 function startup() {
     //handle env vars first
     const args = process.argv.slice(2)
-    if (args.length < 2) throw new Error("missing docs dir and port");
+    // if (args.length < 2) throw new Error("missing docs dir and port");
     if(process.env.PORT) CONFIG.PORT = parseInt(process.env.PORT)
 
     args.filter(arg => arg.startsWith('--'))
