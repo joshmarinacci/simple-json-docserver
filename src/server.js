@@ -94,6 +94,7 @@ const MIMETYPES = {
     'jpeg':'image/jpeg',
     'm4a':'audio/aac',
     'mp3':'audio/mpeg',
+    'js':'text/javascript',
 }
 function saveAsset(req) {
     return new Promise((res,rej)=>{
