@@ -137,6 +137,7 @@ function parseScriptMetadata(fpath) {
                 title:null,
                 description:null,
             }
+            if(!data) return res(meta)
             const contents = data.toString()
             console.log("scanning",contents)
             const title = contents.match(/\#title(.*)/)
