@@ -129,6 +129,94 @@ function saveAsset(req) {
 
     })
 }
+
+function parseScriptMetadata(fpath) {
+    return new Promise((res,rej) => {
+        fs.readFile(fpath,(err,data)=>{
+            const meta = {
+                title:null,
+                description:null,
+            }
+            const contents = data.toString()
+            console.log("scanning",contents)
+            const title = contents.match(/\#title(.*)/)
+            console.log("match",title)
+            if(title) meta.title = title[1]
+            const desc = contents.match(/\#description(.*)/)
+            console.log("match",desc)
+            if(desc) meta.description = desc[1]
+            res(meta)
+        })
+    })
+}
+
+function deleteScript(req) {
+    console.log("deleting",req.params.name)
+    const fpath = path.join(CONFIG.SCRIPTS_DIR,req.params.name)
+    fs.unlinkSync(fpath)
+    return new Promise((res,rej)=>{
+        DB.remove({kind:'script',name:req.params.name, username:req.username},{},(err, numRemoved)=>{
+            if(err) {
+                console.warn("error removing " + fpath)
+                rej(err)
+            }
+            console.log("removed",numRemoved)
+            res()
+        })
+    })
+    // return deleteDoc({kind:'script',name:req.params.name,username:req.username})
+}
+function upsertScript(req) {
+    return new Promise((res,rej)=>{
+        console.log("got a request to add as script with name",req.params.name)
+        const fpath = path.join(CONFIG.SCRIPTS_DIR,req.params.name)
+        console.log("saving to ",fpath)
+        const file = fs.createWriteStream(fpath)
+        req.on('data',(chunk) => file.write(chunk))
+        req.on('end', () => {
+            file.end()
+            return parseScriptMetadata(fpath).then(meta => {
+                console.log("the meta is",meta)
+            return findDocMeta({kind:'script',name:req.params.name, username:req.username})
+                .then((scripts)=>{
+                    if(scripts.length < 1) {
+                        console.log("script does not exist yet, must add it")
+                        const info = {
+                            kind:'script',
+                            timestamp: Date.now(),
+                            username:req.username,
+                            name:req.params.name,
+                            title:meta.title?meta.title:'untitled',
+                            description:meta.description,
+                        }
+                        return docInsert(info).then(()=>{
+                            console.log("inserted script at",fpath)
+                            res(info)
+                        })
+                    } else {
+                        console.log("got the meta",meta)
+                        return new Promise((res2,rej)=>{
+                            DB.update({name:req.params.name, username:req.username},
+                                {$set:meta},
+                                {returnUpdatedDocs:true},(err,num,newDoc)=>{
+                                console.log("error",err)
+                                    console.log("num",num)
+                                    console.log("new doc",newDoc)
+                                    if(err) return rej(err)
+                                    console.log("updated script at",fpath,newDoc)
+                                    return res2(newDoc)
+                                })
+                        }).then((nd)=>{
+                            res(nd)
+                        })
+                    }
+                })
+
+            })
+        })
+    })
+}
+
 function findDocMeta(query,options) {
     return new Promise((res,rej)=>{
         DB.find(query,options,(err,docs)=>{
@@ -157,6 +245,25 @@ function docInsert(meta) {
             }
         })
 }
+function authTemplate(req) {
+    return `<html>
+    <body>
+        <p>great. you are authenticated. you may close this window now.</p>
+        <script>
+            document.body.onload = function() {
+                const injectedUser = ${JSON.stringify(req.user)}
+                console.log("the user is",injectedUser)
+                const msg = {payload:injectedUser, status:'success'}
+                console.log("msg",msg)
+                console.log('location',window.opener.location,'*')
+                window.opener.postMessage(msg, '*')
+                console.log("done posting a message")
+            }
+    </script>
+    </body>
+    </html>`
+}
+
 function realMetaInsert(meta) {
     return new Promise((res,rej)=>{
         DB.insert(meta,(err,newDoc)=>{
@@ -165,6 +272,7 @@ function realMetaInsert(meta) {
         })
     })
 }
+
 
 
 function setupRoutes(app) {
@@ -181,22 +289,7 @@ function setupRoutes(app) {
     })
     app.get('/auth/github/callback', passport.authenticate('github', {session:false}), (req,res) => {
             console.log("successfully authenticated from github")
-            res.send(`<html>
-<body>
-    <p>great. you are authenticated. you may close this window now.</p>
-    <script>
-        document.body.onload = function() {
-            const injectedUser = ${JSON.stringify(req.user)}
-            console.log("the user is",injectedUser)
-            const msg = {payload:injectedUser, status:'success'}
-            console.log("msg",msg)
-            console.log('location',window.opener.location,'*')
-            window.opener.postMessage(msg, '*')
-            console.log("done posting a message")
-        }
-</script>
-</body>
-</html>`)
+            res.send(authTemplate(req))
         })
 
     app.get('/admin/list', checkAdminAuth, (req,res)=>{
@@ -252,6 +345,37 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
 
+    app.get('/scripts/list', checkAuth, (req,res) => {
+        findDocMeta({username:req.username, kind:'script'})
+            .then(docs => res.json(docs))
+    })
+    app.get('/scripts/:name',checkAuth, (req,res) => {
+        findDocMeta({kind:'script',name:req.params.name, username:req.username})
+            .then(scripts => {
+                if(scripts.length < 1) throw new Error(`could not find script with name ${req.params.name}`)
+                const script = scripts[0]
+                const filePath = path.join(process.cwd(),CONFIG.SCRIPTS_DIR,`${script.name}`)
+                console.log("uploading the file",filePath)
+                res.sendFile(filePath)
+            })
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.post('/scripts/delete/:name',checkAuth, (req,res) => {
+        deleteScript(req)
+            .then(() => {
+                res.json({success:true, script:req.params.name, message:'deleted'})
+            })
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+    app.post('/scripts/:name',checkAuth,(req,res) => {
+        upsertScript(req)
+            .then(script => {
+                console.log("sending hte response",script)
+                res.json({success:true, script:script, message:'saved'})
+            })
+            .catch(e => res.json({success:false, message:e.message}))
+    })
+
 }
 
 function startServer() {
@@ -265,21 +389,25 @@ function startServer() {
     //assume all bodies will be JSON and parse them automatically
     app.use(bodyParser.json({limit:'20MB'}))
 
-    //setup passport for github auth
-    passport.use(new GithubStrategy({
-        clientID: CONFIG.GITHUB_CLIENT_ID,
-        clientSecret: CONFIG.GITHUB_CLIENT_SECRET,
-        callbackURL: CONFIG.GITHUB_CALLBACK_URL
-    },function(accessToken, refreshToken, profile, done) {
-        console.log("passport callback")
-        //store the user profile in memory by access token
-        USERS[accessToken] = profile
-        console.log("the user is", USERS[accessToken])
-        console.log('access token is', accessToken)
-        done(null, {id:profile.id, accessToken: accessToken})
-    }))
+    if(!CONFIG.GITHUB_CLIENT_ID) {
+        console.warn("missing GITHUB_CLIENT_ID, auth is disabled")
+    } else {
+        //setup passport for github auth
+        passport.use(new GithubStrategy({
+            clientID: CONFIG.GITHUB_CLIENT_ID,
+            clientSecret: CONFIG.GITHUB_CLIENT_SECRET,
+            callbackURL: CONFIG.GITHUB_CALLBACK_URL
+        }, function (accessToken, refreshToken, profile, done) {
+            console.log("passport callback")
+            //store the user profile in memory by access token
+            USERS[accessToken] = profile
+            console.log("the user is", USERS[accessToken])
+            console.log('access token is', accessToken)
+            done(null, {id: profile.id, accessToken: accessToken})
+        }))
 
-    app.use(passport.initialize())
+        app.use(passport.initialize())
+    }
 
 
     setupRoutes(app)
@@ -290,6 +418,7 @@ doc server http://localhost:${CONFIG.PORT}/
 database  ${CONFIG.DB_FILE}
 docs dir ${CONFIG.DOCS_DIR}
 assets dir ${CONFIG.ASSETS_DIR}
+scripts dir ${CONFIG.SCRIPTS_DIR}
         `))
 }
 
@@ -314,10 +443,12 @@ function startup() {
     if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
     CONFIG.DOCS_DIR = path.join(CONFIG.DIR,'docs')
     CONFIG.ASSETS_DIR = path.join(CONFIG.DIR,'assets')
+    CONFIG.SCRIPTS_DIR = path.join(CONFIG.DIR,'scripts')
     CONFIG.DB_FILE = path.join(CONFIG.DIR,'database.db')
     if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
     if(!fs.existsSync(CONFIG.DOCS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.DOCS_DIR}"`)
     if(!fs.existsSync(CONFIG.ASSETS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.ASSETS_DIR}"`)
+    if(!fs.existsSync(CONFIG.SCRIPTS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.SCRIPTS_DIR}"`)
     if(CONFIG.PORT === -1) throw new Error(`missing port number`)
 
     startServer();
