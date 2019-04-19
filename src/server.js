@@ -348,6 +348,7 @@ function setupRoutes(app) {
     app.get('/scripts/list', checkAuth, (req,res) => {
         findDocMeta({username:req.username, kind:'script'})
             .then(docs => res.json(docs))
+            .catch(e => res.json({success:false, message:e.message}))
     })
     app.get('/scripts/:name',checkAuth, (req,res) => {
         findDocMeta({kind:'script',name:req.params.name, username:req.username})
