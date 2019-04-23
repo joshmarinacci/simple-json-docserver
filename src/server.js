@@ -152,7 +152,7 @@ function parseScriptMetadata(fpath) {
 }
 
 function deleteScript(req) {
-    console.log("deleting",req.params.name)
+    console.log("deleting script",req.params.name)
     const fpath = path.join(CONFIG.SCRIPTS_DIR,req.params.name)
     fs.unlinkSync(fpath)
     return new Promise((res,rej)=>{
@@ -167,6 +167,29 @@ function deleteScript(req) {
     })
     // return deleteDoc({kind:'script',name:req.params.name,username:req.username})
 }
+
+function deleteAsset(req, assets) {
+    console.log("deleting asset",req.params.id, assets)
+    return assets.map(asset => {
+        if(!asset.extension) {
+            if(asset.mimeType === MIMETYPES.png) asset.extension = 'png'
+        }
+        const fpath = path.join(CONFIG.ASSETS_DIR,req.params.id+'.'+asset.extension)
+        console.log('trying to delete the path',fpath)
+        fs.unlinkSync(fpath)
+        return new Promise((res,rej)=>{
+            DB.remove({kind:'asset',id:req.params.id, username:req.username},{},(err, numRemoved)=>{
+                if(err) {
+                    console.warn("error removing " + fpath)
+                    rej(err)
+                }
+                console.log("removed",numRemoved)
+                res()
+            })
+        })
+    })
+}
+
 function upsertScript(req) {
     return new Promise((res,rej)=>{
         console.log("got a request to add as script with name",req.params.name)
@@ -328,6 +351,12 @@ function setupRoutes(app) {
     app.get('/asset/list', checkAuth, (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
             .then(docs => res.json(docs))
+    })
+    app.post('/asset/delete/:id', checkAuth, (req,res)=>{
+        findDocMeta({kind:'asset',id:req.params.id})
+            .then((assets)=> deleteAsset(req,assets))
+            .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
+            .catch(e => res.json({success:false, message:e.message}))
     })
     app.get('/asset/:id',checkAuth, (req,res) => {
         console.log("searching for",req.params.id)
