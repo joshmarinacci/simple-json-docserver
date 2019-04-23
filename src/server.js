@@ -304,6 +304,7 @@ function setupRoutes(app) {
         return res.json({
             assetUpload:true,
             authentication:true,
+            scriptEditing:true,
         })
     })
     app.get('/auth/github/login', (req,res)=>{
