@@ -93,8 +93,11 @@ const MIMETYPES = {
     'jpg':'image/jpeg',
     'jpeg':'image/jpeg',
     'm4a':'audio/aac',
+    'mp4':'video/mp4',
     'mp3':'audio/mpeg',
     'js':'text/javascript',
+    'glb':'model/gltf-binary',
+    'gltf':'model/gltf+json',
 }
 function saveAsset(req) {
     return new Promise((res,rej)=>{
