@@ -193,6 +193,25 @@ function deleteAsset(req, assets) {
     })
 }
 
+function deleteDocs(req,docs) {
+    console.log("deleting docs",req.params.id,docs)
+    return docs.map(doc => {
+        const fpath = path.join(CONFIG.DOCS_DIR,doc.id+'.json')
+        console.log("trying to delete",doc,fpath)
+        fs.unlinkSync(fpath)
+        return new Promise((res,rej)=>{
+            DB.remove({kind:'doc',id:req.params.id, username:req.username},{},(err, numRemoved)=>{
+                if(err) {
+                    console.warn("error removing " + fpath)
+                    rej(err)
+                }
+                console.log("removed",numRemoved)
+                res()
+            })
+        })
+    })
+}
+
 function upsertScript(req) {
     return new Promise((res,rej)=>{
         console.log("got a request to add as script with name",req.params.name)
@@ -308,6 +327,7 @@ function setupRoutes(app) {
             assetUpload:true,
             authentication:true,
             scriptEditing:true,
+            docDeleteSupported:true,
         })
     })
     app.get('/auth/github/login', (req,res)=>{
@@ -340,6 +360,12 @@ function setupRoutes(app) {
     app.get('/doc/list', checkAuth, (req,res)=>{
         findDocMeta({username:req.username, kind:'doc'})
             .then(docs => res.json(docs))
+    })
+    app.post('/doc/delete/:id', checkAuth, (req,res)=>{
+        findDocMeta({username:req.username,id:req.params.id})
+            .then(docs => deleteDocs(req,docs))
+            .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
+            .catch(e => res.json({success:false, message:e.message}))
     })
 
     app.get('/doc/:id',checkAuth,(req,res)=>{
