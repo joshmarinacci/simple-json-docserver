@@ -39,6 +39,7 @@ function checkAuth(req,res,next) {
     const token = req.headers['access-key']
     const user = USERS[token]
     if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
+    console.log("the user is",user)
     next()
 }
 
