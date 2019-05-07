@@ -19,7 +19,7 @@ const CONFIG = {
     PORT:-1,
     ADMIN_USERS:['joshmarinacci'],
     SKIP_AUTH:(process.env.SKIP_AUTH==="true")?true:false,
-    INSECURE_AUTH:true,
+    INSECURE_AUTH:false,
 }
 console.log("using config",CONFIG)
 let DB = null
