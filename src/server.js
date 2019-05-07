@@ -10,6 +10,7 @@ const passport = require('passport')
 const GithubStrategy = require('passport-github')
 
 const USERS = {}
+console.log("env",process.env)
 const CONFIG = {
     GITHUB_CLIENT_ID:process.env.GITHUB_CLIENT_ID,
     GITHUB_CLIENT_SECRET:process.env.GITHUB_CLIENT_SECRET,
@@ -17,10 +18,10 @@ const CONFIG = {
     DIR:process.env.DIR,
     PORT:-1,
     ADMIN_USERS:['joshmarinacci'],
-    SKIP_AUTH:true,
+    SKIP_AUTH:(process.env.SKIP_AUTH==="true")?true:false,
     INSECURE_AUTH:true,
 }
-
+console.log("using config",CONFIG)
 let DB = null
 
 function checkAuth(req,res,next) {
