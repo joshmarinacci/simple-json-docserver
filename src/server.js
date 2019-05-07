@@ -392,7 +392,7 @@ function setupRoutes(app) {
             .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/asset/:id',checkAuth, (req,res) => {
+    app.get('/asset/:id', (req,res) => {
         console.log("searching for",req.params.id)
         findDocMeta({kind:'asset',id:req.params.id}).then((assets)=>{
             if(assets.length < 1) throw new Error(`could not find asset with id ${req.params.id}`)
