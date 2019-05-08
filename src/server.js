@@ -23,7 +23,9 @@ const CONFIG = {
 }
 console.log("using config",CONFIG)
 let DB = null
-
+const GUEST_USER = {
+    username:'guest'
+}
 function checkAuth(req,res,next) {
     if(CONFIG.SKIP_AUTH) {
         req.username = 'joshmarinacci'
@@ -35,7 +37,12 @@ function checkAuth(req,res,next) {
         req.username = user.username
         if(req.user) return next()
     }
-    if(!req.headers['access-key']) return res.json({success:false,message:'missing access token'})
+    //if no access key then use the guest user
+    if(!req.headers['access-key']) {
+        req.user = GUEST_USER
+        req.username = GUEST_USER.username
+        return next()
+    }
     const token = req.headers['access-key']
     const user = USERS[token]
     if(!user) return res.json({success:false,message:'invalid access token, cannot find user'})
