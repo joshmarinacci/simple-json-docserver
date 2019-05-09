@@ -392,7 +392,7 @@ function setupRoutes(app) {
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/asset/list', checkAuth, (req,res)=>{
+    app.get('/asset/list',  (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
             .then(docs => res.json(docs))
     })
@@ -419,12 +419,12 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/scripts/list', checkAuth, (req,res) => {
+    app.get('/scripts/list',  (req,res) => {
         findDocMeta({username:req.username, kind:'script'})
             .then(docs => res.json(docs))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/scripts/:name',checkAuth, (req,res) => {
+    app.get('/scripts/:name', (req,res) => {
         findDocMeta({kind:'script',name:req.params.name, username:req.username})
             .then(scripts => {
                 if(scripts.length < 1) throw new Error(`could not find script with name ${req.params.name}`)
