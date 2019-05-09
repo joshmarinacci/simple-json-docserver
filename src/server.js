@@ -70,7 +70,7 @@ function checkAdminAuth(req,res,next) {
 function loadJSONDocument(id,username) {
     console.log("Loading a doc with",id,'for username',username)
     return findDocMeta({id:id,username:username}).then(infos=>{
-        if(infos.length < 1) throw new Error("no such document for id "+id + "for username" + username)
+        if(infos.length < 1) throw new Error(`no such document for id ${id} for username '${username}`)
         console.log("the doc count is",infos.length)
         console.log(infos)
         return JSON.parse(fs.readFileSync(path.join(CONFIG.DOCS_DIR,infos[0].id+'.json')).toString())
