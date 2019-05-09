@@ -384,7 +384,10 @@ function setupRoutes(app) {
 
     app.get('/doc/:id',(req,res)=>{
         loadJSONDocument(req.params.id, req.username)
-            .then(doc => res.json(doc))
+            .then(doc => {
+                doc.success = true
+                res.json(doc)
+            })
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.post('/doc/:id', checkAuth, (req,res)=>{
@@ -392,7 +395,7 @@ function setupRoutes(app) {
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/asset/list',  (req,res)=>{
+    app.get('/asset/list', checkAuth,  (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
             .then(docs => res.json(docs))
     })
@@ -419,7 +422,7 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/scripts/list',  (req,res) => {
+    app.get('/scripts/list', checkAuth,  (req,res) => {
         findDocMeta({username:req.username, kind:'script'})
             .then(docs => res.json(docs))
             .catch(e => res.json({success:false, message:e.message}))
