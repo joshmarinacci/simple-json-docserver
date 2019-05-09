@@ -364,7 +364,7 @@ function setupRoutes(app) {
     })
     app.get('/userinfo', checkAuth, (req,res) => {
         if(req.username) {
-            return res.json({username:req.username})
+            return res.json({success:true, username:req.username})
         }
         res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
     })
