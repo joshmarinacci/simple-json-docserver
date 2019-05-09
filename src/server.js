@@ -382,7 +382,7 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/doc/:id',checkAuth,(req,res)=>{
+    app.get('/doc/:id',(req,res)=>{
         loadJSONDocument(req.params.id, req.username)
             .then(doc => res.json(doc))
             .catch(e => res.json({success:false, message:e.message}))
