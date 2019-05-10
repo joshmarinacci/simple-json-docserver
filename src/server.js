@@ -428,7 +428,7 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.get('/scripts/:name', (req,res) => {
-        findDocMeta({kind:'script',name:req.params.name, username:req.username})
+        findDocMeta({kind:'script',name:req.params.name})
             .then(scripts => {
                 if(scripts.length < 1) throw new Error(`could not find script with name ${req.params.name}`)
                 const script = scripts[0]
