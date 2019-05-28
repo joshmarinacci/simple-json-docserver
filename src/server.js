@@ -106,6 +106,7 @@ const MIMETYPES = {
     'png':'image/png',
     'jpg':'image/jpeg',
     'jpeg':'image/jpeg',
+    'gif':'image/gif',
     'm4a':'audio/aac',
     'mp4':'video/mp4',
     'mp3':'audio/mpeg',
