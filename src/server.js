@@ -398,6 +398,10 @@ function setupRoutes(app) {
     })
     app.get('/asset/list', checkAuth,  (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
+            .then(docs => {
+                console.log("found the docs list",docs)
+                return docs
+            })
             .then(docs => res.json(docs))
     })
     app.post('/asset/delete/:id', checkAuth, (req,res)=>{
@@ -412,7 +416,7 @@ function setupRoutes(app) {
             if(assets.length < 1) throw new Error(`could not find asset with id ${req.params.id}`)
             const asset = assets[0]
             const filePath = path.join(process.cwd(),CONFIG.ASSETS_DIR,`${asset.id}.${asset.extension}`)
-            console.log("uploading the file",filePath)
+            console.log("returning the file",filePath)
             res.sendFile(filePath)
         })
             .catch(e => res.json({success:false, message:e.message}))
