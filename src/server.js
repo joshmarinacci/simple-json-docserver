@@ -366,24 +366,24 @@ function setupRoutes(app) {
                 })
         }).then(docs => res.json(docs))
     })
-    app.get('/userinfo', checkAuth, (req,res) => {
+    app.get('/:username/userinfo', checkAuth, (req,res) => {
         if(req.username) {
             return res.json({success:true, username:req.username})
         }
         res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
     })
-    app.get('/doc/list', checkAuth, (req,res)=>{
+    app.get('/:username/doc/list', checkAuth, (req,res)=>{
         findDocMeta({username:req.username, kind:'doc'})
             .then(docs => res.json(docs))
     })
-    app.post('/doc/delete/:id', checkAuth, (req,res)=>{
+    app.post('/:username/doc/delete/:id', checkAuth, (req,res)=>{
         findDocMeta({username:req.username,id:req.params.id})
             .then(docs => deleteDocs(req,docs))
             .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/doc/:id',(req,res)=>{
+    app.get('/:username/doc/:id',(req,res)=>{
         loadJSONDocument(req.params.id, req.username)
             .then(doc => {
                 doc.success = true
@@ -391,12 +391,12 @@ function setupRoutes(app) {
             })
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.post('/doc/:id', checkAuth, (req,res)=>{
+    app.post('/:username/doc/:id', checkAuth, (req,res)=>{
         saveJSONDocument(req.params.id,req.body,req.username,req.query)
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/asset/list', checkAuth,  (req,res)=>{
+    app.get('/:username/asset/list', checkAuth,  (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
             .then(docs => {
                 console.log("found the docs list",docs)
@@ -404,13 +404,13 @@ function setupRoutes(app) {
             })
             .then(docs => res.json(docs))
     })
-    app.post('/asset/delete/:id', checkAuth, (req,res)=>{
+    app.post('/:username/asset/delete/:id', checkAuth, (req,res)=>{
         findDocMeta({kind:'asset',id:req.params.id})
             .then((assets)=> deleteAsset(req,assets))
             .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/asset/:id', (req,res) => {
+    app.get('/:username/asset/:id', (req,res) => {
         console.log("searching for",req.params.id)
         findDocMeta({kind:'asset',id:req.params.id}).then((assets)=>{
             if(assets.length < 1) throw new Error(`could not find asset with id ${req.params.id}`)
@@ -421,18 +421,18 @@ function setupRoutes(app) {
         })
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.post('/asset/:id',checkAuth, (req,res) => {
+    app.post('/:username/asset/:id',checkAuth, (req,res) => {
         saveAsset(req)
             .then(asset => res.json({success:true, asset:asset, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/scripts/list', checkAuth,  (req,res) => {
+    app.get('/:username/scripts/list', checkAuth,  (req,res) => {
         findDocMeta({username:req.username, kind:'script'})
             .then(docs => res.json(docs))
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.get('/scripts/:name', (req,res) => {
+    app.get('/:username/scripts/:name', (req,res) => {
         findDocMeta({kind:'script',name:req.params.name})
             .then(scripts => {
                 if(scripts.length < 1) throw new Error(`could not find script with name ${req.params.name}`)
@@ -443,14 +443,14 @@ function setupRoutes(app) {
             })
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.post('/scripts/delete/:name',checkAuth, (req,res) => {
+    app.post('/:username/scripts/delete/:name',checkAuth, (req,res) => {
         deleteScript(req)
             .then(() => {
                 res.json({success:true, script:req.params.name, message:'deleted'})
             })
             .catch(e => res.json({success:false, message:e.message}))
     })
-    app.post('/scripts/:name',checkAuth,(req,res) => {
+    app.post('/:username/scripts/:name',checkAuth,(req,res) => {
         upsertScript(req)
             .then(script => {
                 console.log("sending hte response",script)
