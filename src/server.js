@@ -116,6 +116,11 @@ const MIMETYPES = {
     'glb':'model/gltf-binary',
     'gltf':'model/gltf+json',
 }
+
+function calcAssetPath(username, id, ext) {
+    return path.join(CONFIG.ASSETS_DIR,username,id,'.',ext)
+}
+
 function saveAsset(req) {
     return new Promise((res,rej)=>{
         const ext = req.params.id.substring(req.params.id.lastIndexOf('.')+1).toLowerCase()
@@ -124,7 +129,8 @@ function saveAsset(req) {
         console.log("mimetype",mimetype)
         if(!mimetype) throw new Error(`unknown mimetype for extension ${ext}`)
         const id = "asset"+Math.floor(Math.random()*10000000)
-        const fpath = path.join(CONFIG.ASSETS_DIR,id+'.'+ext)
+        const fpath = calcAssetPath(req.params.username,id,ext)
+        // const fpath = path.join(CONFIG.ASSETS_DIR,id+'.'+ext)
         console.log("writing to disk as",fpath)
         const file = fs.createWriteStream(fpath,{encoding:'binary'})
         //stream it directly to disk
@@ -173,7 +179,7 @@ function parseScriptMetadata(fpath) {
 
 function deleteScript(req) {
     console.log("deleting script",req.params.name)
-    const fpath = path.join(CONFIG.SCRIPTS_DIR,req.params.name)
+    const fpath = calcScriptPath(req.params.username, req.params.name)
     fs.unlinkSync(fpath)
     return new Promise((res,rej)=>{
         DB.remove({kind:'script',name:req.params.name, username:req.username},{},(err, numRemoved)=>{
@@ -194,7 +200,7 @@ function deleteAsset(req, assets) {
         if(!asset.extension) {
             if(asset.mimeType === MIMETYPES.png) asset.extension = 'png'
         }
-        const fpath = path.join(CONFIG.ASSETS_DIR,req.user.username,req.params.id+'.'+asset.extension)
+        const fpath = calcAssetPath(req.params.username,req.params.id,asset.extension)
         console.log('trying to delete the path',fpath)
         fs.unlinkSync(fpath)
         return new Promise((res,rej)=>{
@@ -229,10 +235,14 @@ function deleteDocs(req,docs) {
     })
 }
 
+function calcScriptPath(username, name) {
+    return path.join(CONFIG.SCRIPTS_DIR,username,name)
+}
+
 function upsertScript(req) {
     return new Promise((res,rej)=>{
         console.log("got a request to add as script with name",req.params.name)
-        const fpath = path.join(CONFIG.SCRIPTS_DIR,req.params.name)
+        const fpath = calcScriptPath(req.params.username,req.params.name)
         console.log("saving to ",fpath)
         const file = fs.createWriteStream(fpath)
         req.on('data',(chunk) => file.write(chunk))
@@ -421,14 +431,20 @@ function setupRoutes(app) {
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
+
+
+
     app.get('/:username/asset/list', checkAuth,  (req,res)=>{
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         findDocMeta({username:req.username, kind:'asset'})
-            .then(docs => {
-                return docs
-            })
             .then(docs => res.json(docs))
     })
     app.post('/:username/asset/delete/:id', checkAuth, (req,res)=>{
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         findDocMeta({kind:'asset',id:req.params.id})
             .then((assets)=> deleteAsset(req,assets))
             .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
@@ -446,12 +462,20 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.post('/:username/asset/:id',checkAuth, (req,res) => {
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         saveAsset(req)
             .then(asset => res.json({success:true, asset:asset, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
 
+
+
     app.get('/:username/scripts/list', checkAuth,  (req,res) => {
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         findDocMeta({username:req.username, kind:'script'})
             .then(docs => res.json(docs))
             .catch(e => res.json({success:false, message:e.message}))
@@ -461,13 +485,15 @@ function setupRoutes(app) {
             .then(scripts => {
                 if(scripts.length < 1) throw new Error(`could not find script with name ${req.params.name}`)
                 const script = scripts[0]
-                const filePath = path.join(process.cwd(),CONFIG.SCRIPTS_DIR,`${script.name}`)
-                console.log("uploading the file",filePath)
+                const filePath = calcScriptPath(req.params.username,script.name)
                 res.sendFile(filePath)
             })
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.post('/:username/scripts/delete/:name',checkAuth, (req,res) => {
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         deleteScript(req)
             .then(() => {
                 res.json({success:true, script:req.params.name, message:'deleted'})
@@ -475,6 +501,9 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.post('/:username/scripts/:name',checkAuth,(req,res) => {
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot mess with another users stuff'})
         upsertScript(req)
             .then(script => {
                 console.log("sending hte response",script)

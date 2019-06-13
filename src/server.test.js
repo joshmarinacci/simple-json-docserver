@@ -198,9 +198,25 @@ async function doit() {
         .then(()=>console.log("passed: doc list test"))
 
 
-    // assert(fileOrDirectoryExists('testdir/user1') === true)
+    // assert(fileOrDirectoryExists('testdir/docs/user1') === true)
     // assert(fileOrDirectoryExists('testdir/user2') === true)
     // assert(fileOrDirectoryExists('testdir/blah') === false)
+
+    //list assets
+    await request(app).get(`/user1/asset/list`)
+        .set('access-key',accessKey)
+        .then(res => {
+            assert(res.body.length === 0)
+        })
+        .then(()=>console.log("passed: doc list test"))
+    //upload an asset
+    await request(app).post('/user1/asset/foobarbaz.gif')
+    //list assets
+    //try to get asset as another user
+    //try to upload asset as another user
+    //try to delete the asset as another user
+    //delete the asset
+
 
 
     console.log("done with it all")
