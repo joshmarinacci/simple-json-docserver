@@ -57,15 +57,24 @@ function checkAdminAuth(req,res,next) {
     next()
 }
 
+function calcDocPath(username,id) {
+    return path.join(CONFIG.DOCS_DIR,username,id+'.json')
+}
+
 function loadJSONDocument(id,username) {
     // console.log("Loading a doc with",id,'for username',username)
     return findDocMeta({id:id}).then(infos=>{
         if(infos.length < 1) throw new Error(`no such document for id ${id} for username '${username}`)
         console.log("the doc count is",infos.length)
         console.log(infos)
-        return JSON.parse(fs.readFileSync(path.join(CONFIG.DOCS_DIR,infos[0].id+'.json')).toString())
+        return JSON.parse(fs.readFileSync(calcDocPath(username,infos[0].id)).toString())
     })
 }
+
+function makeDirExist(fname) {
+    if(!fs.existsSync(fname)) fs.mkdirSync(fname)
+}
+
 function saveJSONDocument(id, doc, username, query) {
     //save the body data to a json file
     //create a unique doc id if none is specified
@@ -86,7 +95,9 @@ function saveJSONDocument(id, doc, username, query) {
         }
         if(id) meta.id = id
 
-        const doc_path = path.join(CONFIG.DOCS_DIR,meta.id+'.json')
+        makeDirExist(path.join(CONFIG.DOCS_DIR,username))
+        // const doc_path = path.join(CONFIG.DOCS_DIR,meta.id+'.json')
+        const doc_path = calcDocPath(username,meta.id)
         // console.log('saving',meta,'to',doc_path)
         fs.writeFileSync(doc_path, JSON.stringify(doc))
         return docInsert(meta)
@@ -183,7 +194,7 @@ function deleteAsset(req, assets) {
         if(!asset.extension) {
             if(asset.mimeType === MIMETYPES.png) asset.extension = 'png'
         }
-        const fpath = path.join(CONFIG.ASSETS_DIR,req.params.id+'.'+asset.extension)
+        const fpath = path.join(CONFIG.ASSETS_DIR,req.user.username,req.params.id+'.'+asset.extension)
         console.log('trying to delete the path',fpath)
         fs.unlinkSync(fpath)
         return new Promise((res,rej)=>{
@@ -202,7 +213,7 @@ function deleteAsset(req, assets) {
 function deleteDocs(req,docs) {
     console.log("deleting docs",req.params.id,docs)
     return docs.map(doc => {
-        const fpath = path.join(CONFIG.DOCS_DIR,doc.id+'.json')
+        const fpath = calcDocPath(req.params.username,req.params.id)
         console.log("trying to delete",doc,fpath)
         fs.unlinkSync(fpath)
         return new Promise((res,rej)=>{
@@ -394,7 +405,7 @@ function setupRoutes(app) {
     })
 
     app.get('/:username/doc/:id',checkAuth,(req,res)=>{
-        console.log("loading doc for",req.username, req.params.username)
+        // console.log("loading doc for",req.username, req.params.username)
         loadJSONDocument(req.params.id, req.params.username)
             .then(doc => {
                 doc.success = true
@@ -403,14 +414,16 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.post('/:username/doc/:id', checkAuth, (req,res)=>{
-        saveJSONDocument(req.params.id,req.body,req.username,req.query)
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot save to another users docs'})
+        saveJSONDocument(req.params.id,req.body,req.params.username,req.query)
             .then(doc => res.json({success:true, doc:doc, message:'saved'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.get('/:username/asset/list', checkAuth,  (req,res)=>{
         findDocMeta({username:req.username, kind:'asset'})
             .then(docs => {
-                console.log("found the docs list",docs)
                 return docs
             })
             .then(docs => res.json(docs))
@@ -422,7 +435,7 @@ function setupRoutes(app) {
             .catch(e => res.json({success:false, message:e.message}))
     })
     app.get('/:username/asset/:id', (req,res) => {
-        console.log("searching for",req.params.id)
+        // console.log("searching for",req.params.id)
         findDocMeta({kind:'asset',id:req.params.id}).then((assets)=>{
             if(assets.length < 1) throw new Error(`could not find asset with id ${req.params.id}`)
             const asset = assets[0]

@@ -106,6 +106,7 @@ async function doit() {
         .expect('Content-Type', /json/)
         .expect(200)
         .then(res => {
+            console.log("return is",res.body)
             assert(res.body.doc.type === 'test')
             assert(res.body.doc.title === 'testdoc1_title')
         })
@@ -147,10 +148,9 @@ async function doit() {
         .expect('Content-Type', /json/)
         .expect(403)
         .then(res => {
-            console.log("res",res.body)
             assert(res.body.success === false)
         })
-        .then(()=>pass("passed: doc list test"))
+        .then(()=>pass("doc list test"))
 
 
 
@@ -185,6 +185,7 @@ async function doit() {
         .then(res => {
             assert(res.body.success === true)
         })
+        .then(()=>pass("delete my doc test"))
 
     //now list, should be 0
     await request(app).get(`/user1/doc/list`)
