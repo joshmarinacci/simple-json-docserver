@@ -24,6 +24,7 @@
     "passport-github": "^1.1.0"
   },
   "devDependencies": {
-    "body-parser": "^1.18.3"
+    "body-parser": "^1.18.3",
+    "supertest": "^4.0.2"
   }
 }

@@ -1,5 +1,6 @@
 console.log("starting the json doc server")
 
+let CONFIG = null
 const cors = require('cors')
 const bodyParser = require('body-parser')
 const fs = require('fs')
@@ -10,18 +11,6 @@ const passport = require('passport')
 const GithubStrategy = require('passport-github')
 
 const USERS = {}
-console.log("env",process.env)
-const CONFIG = {
-    GITHUB_CLIENT_ID:process.env.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET:process.env.GITHUB_CLIENT_SECRET,
-    GITHUB_CALLBACK_URL:process.env.GITHUB_CALLBACK_URL,
-    DIR:process.env.DIR,
-    PORT:-1,
-    ADMIN_USERS:['joshmarinacci'],
-    SKIP_AUTH:(process.env.SKIP_AUTH==="true")?true:false,
-    INSECURE_AUTH:false,
-}
-console.log("using config",CONFIG)
 let DB = null
 const GUEST_USER = {
     username:'guest'
@@ -31,14 +20,15 @@ function checkAuth(req,res,next) {
         req.username = 'joshmarinacci'
         return next()
     }
-    if(CONFIG.INSECURE_AUTH===true) {
-        console.log("params",req.params, req.query)
-        const token=req.query.accesstoken
-        req.username = user.username
-        if(req.user) return next()
-    }
+    // if(CONFIG.INSECURE_AUTH===true) {
+    //     console.log("params",req.params, req.query)
+    //     const token=req.query.accesstoken
+    //     req.username = user.username
+    //     if(req.user) return next()
+    // }
     //if no access key then use the guest user
     if(!req.headers['access-key']) {
+        console.log("=== using the guest user")
         req.user = GUEST_USER
         req.username = GUEST_USER.username
         return next()
@@ -68,7 +58,7 @@ function checkAdminAuth(req,res,next) {
 }
 
 function loadJSONDocument(id,username) {
-    console.log("Loading a doc with",id,'for username',username)
+    // console.log("Loading a doc with",id,'for username',username)
     return findDocMeta({id:id}).then(infos=>{
         if(infos.length < 1) throw new Error(`no such document for id ${id} for username '${username}`)
         console.log("the doc count is",infos.length)
@@ -81,9 +71,10 @@ function saveJSONDocument(id, doc, username, query) {
     //create a unique doc id if none is specified
     //add metadata to database
     return Promise.resolve(null).then(() => {
-        console.log("saving the json doc",doc)
-        console.log("using query",query)
-        console.log("with username",username)
+        // console.log("saving the json doc",doc)
+        // console.log("using query",query)
+        // console.log("with username",username)
+        if(!doc) throw new Error("missing document body")
         if(!query.type) throw new Error("missing doc type")
         const meta = {
             kind:'doc',
@@ -96,7 +87,7 @@ function saveJSONDocument(id, doc, username, query) {
         if(id) meta.id = id
 
         const doc_path = path.join(CONFIG.DOCS_DIR,meta.id+'.json')
-        console.log('saving',meta,'to',doc_path)
+        // console.log('saving',meta,'to',doc_path)
         fs.writeFileSync(doc_path, JSON.stringify(doc))
         return docInsert(meta)
     })
@@ -335,6 +326,13 @@ function realMetaInsert(meta) {
 }
 
 
+function generateTestingLogin(username) {
+    const token = `token-${Math.floor(Math.random()*100000)}`
+    USERS[token] = {
+        username:username
+    }
+    return token
+}
 
 function setupRoutes(app) {
     app.get('/info',(req,res)=>{
@@ -354,6 +352,12 @@ function setupRoutes(app) {
             console.log("successfully authenticated from github")
             res.send(authTemplate(req))
         })
+    app.post('/auth/testlogin/:username',(req,res)=>{
+        if(!CONFIG.TEST_AUTH) return res.status(403).json({success:false,message:'test auth not enabled'})
+        console.log("doing a fake login of user",req.params.username)
+        const accessKey = generateTestingLogin(req.params.username)
+        res.json({'access-key': accessKey})
+    })
 
     app.get('/admin/list', checkAdminAuth, (req,res)=>{
         console.log("listing all the files")
@@ -373,18 +377,25 @@ function setupRoutes(app) {
         res.json({success:false,message:"no user found with access token"+req.query.accesstoken})
     })
     app.get('/:username/doc/list', checkAuth, (req,res)=>{
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot list another users docs'})
         findDocMeta({username:req.username, kind:'doc'})
             .then(docs => res.json(docs))
     })
     app.post('/:username/doc/delete/:id', checkAuth, (req,res)=>{
+        if(req.username !== req.params.username) return res
+            .status(403)
+            .json({success:false,message:'cannot delete another users docs'})
         findDocMeta({username:req.username,id:req.params.id})
             .then(docs => deleteDocs(req,docs))
             .then(()=> res.json({success:true, script:req.params.id, message:'deleted'}))
             .catch(e => res.json({success:false, message:e.message}))
     })
 
-    app.get('/:username/doc/:id',(req,res)=>{
-        loadJSONDocument(req.params.id, req.username)
+    app.get('/:username/doc/:id',checkAuth,(req,res)=>{
+        console.log("loading doc for",req.username, req.params.username)
+        loadJSONDocument(req.params.id, req.params.username)
             .then(doc => {
                 doc.success = true
                 res.json(doc)
@@ -461,7 +472,21 @@ function setupRoutes(app) {
 
 }
 
-function startServer() {
+function startServer(CONFIG_in) {
+    CONFIG = CONFIG_in
+    //handle args next
+    if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
+    CONFIG.DOCS_DIR = path.join(CONFIG.DIR,'docs')
+    CONFIG.ASSETS_DIR = path.join(CONFIG.DIR,'assets')
+    CONFIG.SCRIPTS_DIR = path.join(CONFIG.DIR,'scripts')
+    CONFIG.DB_FILE = path.join(CONFIG.DIR,'database.db')
+    if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
+    if(!fs.existsSync(CONFIG.DOCS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.DOCS_DIR}"`)
+    if(!fs.existsSync(CONFIG.ASSETS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.ASSETS_DIR}"`)
+    if(!fs.existsSync(CONFIG.SCRIPTS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.SCRIPTS_DIR}"`)
+    if(CONFIG.PORT === -1) throw new Error(`missing port number`)
+
+
     DB = new NEDB({filename: CONFIG.DB_FILE, autoload:true})
     //create the server
     const app = express()
@@ -503,192 +528,8 @@ docs dir ${CONFIG.DOCS_DIR}
 assets dir ${CONFIG.ASSETS_DIR}
 scripts dir ${CONFIG.SCRIPTS_DIR}
         `))
-}
-
-startup();
-
-function startup() {
-    //handle env vars first
-    const args = process.argv.slice(2)
-    // if (args.length < 2) throw new Error("missing docs dir and port");
-    if(process.env.PORT) CONFIG.PORT = parseInt(process.env.PORT)
-
-    args.filter(arg => arg.startsWith('--'))
-        .forEach(param => {
-            const parts = param.substring(2).split('=')
-            CONFIG[parts[0]] = parts[1]
-        })
-    if(CONFIG.PORT !== -1) CONFIG.PORT = parseInt(CONFIG.PORT)
-    console.log('using the config')
-    console.log(CONFIG)
-
-    //handle args next
-    if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
-    CONFIG.DOCS_DIR = path.join(CONFIG.DIR,'docs')
-    CONFIG.ASSETS_DIR = path.join(CONFIG.DIR,'assets')
-    CONFIG.SCRIPTS_DIR = path.join(CONFIG.DIR,'scripts')
-    CONFIG.DB_FILE = path.join(CONFIG.DIR,'database.db')
-    if(!fs.existsSync(CONFIG.DIR)) throw new Error(`dir doesn't exist: "${CONFIG.DIR}"`)
-    if(!fs.existsSync(CONFIG.DOCS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.DOCS_DIR}"`)
-    if(!fs.existsSync(CONFIG.ASSETS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.ASSETS_DIR}"`)
-    if(!fs.existsSync(CONFIG.SCRIPTS_DIR)) throw new Error(`docs dir doesn't exist: "${CONFIG.SCRIPTS_DIR}"`)
-    if(CONFIG.PORT === -1) throw new Error(`missing port number`)
-
-    startServer();
-}
-
-//call nedb.find as a promise
-function pFind(query,options) {
-    return new Promise((res,rej)=>{
-        DB.find(query,options,(err,docs)=>{
-            if(err) return rej(err)
-            return res(docs)
-        })
-    })
-}
-/*
-function pInsert(doc) {
-    return new Promise((res,rej)=>{
-        DB.insert(doc,(err,newDoc)=>{
-            if(err) return rej(err)
-            return res(newDoc)
-        })
-    })
-}
-
-function saveModule(module) {
-    return Promise.resolve(null).then(() => {
-        module.type = 'module'
-        module.timestamp = Date.now()
-        const manifest = module.manifest
-        delete module.manifest
-        module.animpath = `anim_${Math.random()}_.json`
-        const apath = path.join(ANIM_DIR,module.animpath)
-        fs.writeFileSync(apath,JSON.stringify(manifest))
-        return pInsert(module)
-    })
-}
-
-function pUpdate(query,doc) {
-    return new Promise((res,rej)=>{
-        DB.update(query,doc,{returnUpdatedDocs:true},(err,num,newDoc)=>{
-            if(err) return rej(err)
-            return res(newDoc)
-        })
-    })
-}
-*/
-/*
-function findAllModules() {
-    return new Promise((res,rej)=>{
-        DB.find({type:'module', $not:{archived:true}})
-            .sort({timestamp:-1})
-            .projection({javascript:0, json:0, manifest:0})
-            .exec((err,docs)=>{
-                if(err) return rej(err)
-                return res(docs)
-            })
-    })
-}
-
-function findModuleByIdCompact(id) {
-    return new Promise((res,rej)=>{
-        DB.find({_id:id})
-            .projection({javascript:0, json:0, manifest:0})
-            .exec((err,docs)=>{
-                if(err) return rej(err)
-                return res(docs[0])
-            })
-    })
+    return app
 }
 
 
-function pUpdateFields(query, fields) {
-    return new Promise((res,rej)=>{
-        DB.update(query,
-            {$set:fields},
-            {returnUpdatedDocs:true},
-            (err,num,docs)=>{
-                if(err) return rej(err)
-                console.log("num updated",num)
-                return res(docs)
-            })
-    })
-}
-*/
-
-
-function setupServer() {
-    //get full info of a particular module
-    /*
-    app.post('/api/modules/archive/:id', checkAdminAuth, (req,res)=>{
-        pUpdateFields({_id:req.params.id},{archived:true}).then((doc)=>{
-            console.log("successfully archived it",doc)
-            res.json({success:true, doc:doc})
-        })
-    })
-    app.get('/api/modules/:id', (req,res) =>
-        getFullModuleById(req.params.id)
-            .then(mod => res.json({success:true, doc:mod}))
-            .catch(e => {
-                console.log("error getting full module by id",e)
-                res.json({success:false, error:e})
-            })
-    )
-    //list all modules, sorted by name, without the code
-    app.get('/api/modules/', (req,res) =>
-        findAllModules()
-            .then(docs=>res.json(docs))
-            .catch(e => {
-                console.log("/api/modules error",e)
-                res.json({success:false, error:e})
-            })
-    )*/
-    /*
-    //mark a particular item in the queue as completed
-    app.post('/api/queue/complete/:id', (req,res)=>{
-        console.log("trying to complete", req.params.id)
-        pUpdateFields({_id:req.params.id},{completed:true}).then((doc)=> {
-            console.log("successfully completed it", doc)
-            return pFind({type: 'queue'})
-        })
-            .then((queues)=> {
-                const queue = queues[0]
-                console.log("old queue count",queue.modules)
-                queue.modules = queue.modules.filter(mod=>mod !== req.params.id)
-                console.log("new queue count", queue.modules)
-                pUpdate({type:'queue'},queue)
-                    .then(queue => res.json({success:true, queue:queue}))
-            })
-    })
-    //return the queue object which lists ids of
-    app.get('/api/queue/',(req,res) =>
-        pFind({type:'queue'})
-            .then((queues)=>{
-                const queue = queues[0]
-                return Promise.all(queue.modules.map(id=>findModuleByIdCompact(id)))
-                    .then(modules=>{
-                        queue.expanded = modules
-                        queue.expanded = queue.expanded.filter(mod => !mod.completed)
-                        res.json({success:true, queue:queue})
-                    })
-            }).catch((e)=>{
-            console.log("/api/queue error",e)
-            res.json({success:false, error:e})
-        })
-    )
-
-     */
-/*
-    app.post('/api/publish/', checkAuth, (req,res)=>{
-        saveModule(req.body)
-            .then(doc => res.json({success:true, doc:doc}))
-            .catch(e => {
-                console.log("error inside save module",e)
-                res.json({success:false, error:e})
-            })
-    })
-
- */
-}
-
+module.exports.startServer = startServer
